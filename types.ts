@@ -1,5 +1,6 @@
 export const TWITTER_BROADCAST_CHAT_MESSAGE = "twitter-broadcast-chat-message";
 export const POLL_INTERVAL_MS = 2000;
+export const RECONNECT_DELAY_MS = 3000;
 export const X_WEB_BEARER =
 	"AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
 

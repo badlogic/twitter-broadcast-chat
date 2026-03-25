@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { BroadcastChatOverlay } from "./overlay.js";
 import { BroadcastChatStore } from "./state.js";
-import { POLL_INTERVAL_MS, type BroadcastBootstrap, type BroadcastChatMessage } from "./types.js";
-import { bootstrapBroadcast, fetchInitialHistory, fetchMessagesSince, isAuthLikeError } from "./twitter-chat-api.js";
+import { RECONNECT_DELAY_MS, type BroadcastBootstrap, type BroadcastChatMessage } from "./types.js";
+import { bootstrapBroadcast, connectBroadcastChat, fetchInitialHistory } from "./twitter-chat-api.js";
 import { BroadcastChatWidget } from "./widget.js";
 
 interface RuntimeWatcher {
@@ -94,7 +94,7 @@ export default function twitterBroadcastChat(pi: ExtensionAPI): void {
 			stop: () => controller.abort(),
 		};
 
-		void pollLoop(url, bootstrap, controller.signal, ctx, () => watcher, (message) => {
+		void wsLoop(url, bootstrap, controller.signal, ctx, () => watcher, (message) => {
 			if (!store.addMessage(message)) return;
 			updateUi(ctx);
 			ctx.ui.notify(`New X chat from @${message.username}`, "info");
@@ -155,7 +155,7 @@ export default function twitterBroadcastChat(pi: ExtensionAPI): void {
 	});
 }
 
-async function pollLoop(
+async function wsLoop(
 	url: string,
 	initialBootstrap: BroadcastBootstrap,
 	signal: AbortSignal,
@@ -164,60 +164,64 @@ async function pollLoop(
 	onMessage: (message: BroadcastChatMessage) => void,
 ): Promise<void> {
 	let bootstrap = initialBootstrap;
-	let sinceNs = getNextSinceNs(store.getMessages(), bootstrap.broadcastId);
 	let consecutiveErrors = 0;
 
 	while (!signal.aborted) {
 		try {
-			await sleep(POLL_INTERVAL_MS, signal);
-			const currentWatcher = getWatcher();
-			if (!currentWatcher || currentWatcher.bootstrap.broadcastId !== bootstrap.broadcastId) return;
-
-			const messages = await fetchMessagesSince(bootstrap, sinceNs);
-			consecutiveErrors = 0;
-
-			for (const message of messages) {
-				if (message.timestampMs > 0) {
-					sinceNs = Math.max(sinceNs, message.timestampMs * 1_000_000 + 1);
+			await new Promise<void>((resolve, reject) => {
+				if (signal.aborted) {
+					reject(new Error("aborted"));
+					return;
 				}
-				if (store.hasMessage(message.uuid)) continue;
-				onMessage(message);
-			}
+
+				const conn = connectBroadcastChat(
+					bootstrap,
+					(message) => {
+						const w = getWatcher();
+						if (!w || w.bootstrap.broadcastId !== bootstrap.broadcastId) {
+							conn.close();
+							return;
+						}
+						consecutiveErrors = 0;
+						if (store.hasMessage(message.uuid)) return;
+						onMessage(message);
+					},
+					(error) => {
+						reject(error);
+					},
+					() => {
+						resolve();
+					},
+				);
+
+				const onAbort = () => {
+					conn.close();
+					reject(new Error("aborted"));
+				};
+				signal.addEventListener("abort", onAbort, { once: true });
+			});
 		} catch (error) {
 			if (signal.aborted) return;
 			consecutiveErrors++;
 
-			if (isAuthLikeError(error)) {
-				try {
-					bootstrap = await bootstrapBroadcast(url);
-					store.setActiveWatcher({ bootstrap, startedAt: Date.now() });
-					ctx.ui.notify("Refreshed X broadcast chat token.", "info");
-					continue;
-				} catch (refreshError) {
-					if (consecutiveErrors === 1 || consecutiveErrors % 10 === 0) {
-						ctx.ui.notify(
-							`twitter-broadcast poll failed: ${refreshError instanceof Error ? refreshError.message : String(refreshError)}`,
-							"error",
-						);
-					}
+			try {
+				bootstrap = await bootstrapBroadcast(url);
+				store.setActiveWatcher({ bootstrap, startedAt: Date.now() });
+				if (consecutiveErrors > 1) {
+					ctx.ui.notify("Reconnected X broadcast chat.", "info");
+				}
+			} catch (refreshError) {
+				if (consecutiveErrors === 1 || consecutiveErrors % 10 === 0) {
+					ctx.ui.notify(
+						`twitter-broadcast reconnect failed: ${refreshError instanceof Error ? refreshError.message : String(refreshError)}`,
+						"error",
+					);
 				}
 			}
+		}
 
-			if (consecutiveErrors === 1 || consecutiveErrors % 10 === 0) {
-				ctx.ui.notify(
-					`twitter-broadcast poll failed: ${error instanceof Error ? error.message : String(error)}`,
-					"error",
-				);
-			}
+		if (!signal.aborted) {
+			await sleep(RECONNECT_DELAY_MS, signal).catch(() => {});
 		}
 	}
-}
-
-function getNextSinceNs(messages: BroadcastChatMessage[], broadcastId: string): number {
-	let max = 0;
-	for (const message of messages) {
-		if (message.broadcastId !== broadcastId) continue;
-		max = Math.max(max, message.timestampMs * 1_000_000 + 1);
-	}
-	return max;
 }

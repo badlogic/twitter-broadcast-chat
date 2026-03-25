@@ -186,7 +186,7 @@ async function fetchHistoryPage(
 	};
 }
 
-function parseHistoryMessage(
+export function parseHistoryMessage(
 	message: { kind?: number; payload?: string },
 	broadcastId: string,
 	url: string,
@@ -298,4 +298,71 @@ async function requestJson<T>(url: string, init: RequestInit): Promise<T> {
 
 export function isAuthLikeError(error: unknown): boolean {
 	return error instanceof HttpError && (error.status === 401 || error.status === 403);
+}
+
+export interface BroadcastChatConnection {
+	close(): void;
+}
+
+export function connectBroadcastChat(
+	bootstrap: BroadcastBootstrap,
+	onMessage: (message: BroadcastChatMessage) => void,
+	onError: (error: Error) => void,
+	onClose: () => void,
+): BroadcastChatConnection {
+	const wsUrl = `${bootstrap.endpoint.replace(/^http/, "ws").replace(/\/$/, "")}/chatapi/v1/chatnow`;
+	const ws = new WebSocket(wsUrl);
+	let closed = false;
+
+	ws.addEventListener("open", () => {
+		ws.send(
+			JSON.stringify({
+				payload: JSON.stringify({ access_token: bootstrap.accessToken }),
+				kind: 3,
+			}),
+		);
+
+		ws.send(
+			JSON.stringify({
+				payload: JSON.stringify({
+					body: JSON.stringify({ room: bootstrap.broadcastId }),
+					kind: 1,
+				}),
+				kind: 2,
+			}),
+		);
+	});
+
+	ws.addEventListener("message", (event) => {
+		const raw = typeof event.data === "string" ? event.data : String(event.data);
+		try {
+			const msg = JSON.parse(raw);
+			if (msg.kind === 1 && msg.payload) {
+				const parsed = parseHistoryMessage(msg, bootstrap.broadcastId, bootstrap.url);
+				if (parsed) onMessage(parsed);
+			}
+		} catch {}
+	});
+
+	ws.addEventListener("error", () => {
+		if (!closed) {
+			closed = true;
+			onError(new Error(`WebSocket error for broadcast ${bootstrap.broadcastId}`));
+		}
+	});
+
+	ws.addEventListener("close", () => {
+		if (!closed) {
+			closed = true;
+			onClose();
+		}
+	});
+
+	return {
+		close() {
+			if (closed) return;
+			closed = true;
+			ws.close();
+		},
+	};
 }
