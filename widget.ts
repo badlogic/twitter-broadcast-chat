@@ -40,9 +40,12 @@ export class BroadcastChatWidget extends Container {
 			return;
 		}
 
+		const now = Date.now();
 		for (const message of relevantMessages) {
-			const handle = this.theme.fg("muted", xProfileLink(message.username));
-			this.addChild(new Text(`${handle} ${message.text}`, 0, 0));
+			const isRecent = now - message.timestampMs < 10_000;
+			const handle = this.theme.fg(isRecent ? "warning" : "muted", xProfileLink(message.username));
+			const text = isRecent ? this.theme.fg("warning", message.text) : message.text;
+			this.addChild(new Text(`${handle} ${text}`, 0, 0));
 		}
 	}
 }
