@@ -98,6 +98,7 @@ export default function twitterBroadcastChat(pi: ExtensionAPI): void {
 			if (!store.addMessage(message)) return;
 			updateUi(ctx);
 			ctx.ui.notify(`New X chat from @${message.username}`, "info");
+			setTimeout(() => updateUi(ctx), 10_000);
 		});
 	}
 
