@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "skipLibCheck": true,
+    "typeRoots": ["/Users/badlogic/workspaces/pi-mono/node_modules/@types"],
+    "baseUrl": ".",
+    "paths": {
+      "@mariozechner/pi-coding-agent": ["/Users/badlogic/workspaces/pi-mono/packages/coding-agent/dist/index.d.ts"],
+      "@mariozechner/pi-tui": ["/Users/badlogic/workspaces/pi-mono/packages/tui/dist/index.d.ts"],
+      "@mariozechner/pi-agent-core": ["/Users/badlogic/workspaces/pi-mono/packages/agent-core/dist/index.d.ts"],
+      "@mariozechner/pi-ai": ["/Users/badlogic/workspaces/pi-mono/packages/ai/dist/index.d.ts"]
+    }
+  },
+  "include": ["./**/*.ts"]
+}

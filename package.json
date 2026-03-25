@@ -1,0 +1,16 @@
+{
+  "name": "twitter-broadcast-chat",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p ./tsconfig.json",
+    "dump": "npx tsx ./twitter-chat-dump.ts"
+  },
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*"
+  }
+}
